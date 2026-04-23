@@ -1,0 +1,2 @@
+/* Icon colour intentionally inherits `currentColor` so Obsidian can style it
+   for light/dark themes and hover/active/disabled states. No overrides here. */

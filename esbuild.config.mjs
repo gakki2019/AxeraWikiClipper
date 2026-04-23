@@ -1,0 +1,47 @@
+import esbuild from "esbuild";
+import process from "node:process";
+import builtins from "builtin-modules";
+
+const prod = process.argv[2] === "production";
+
+const banner = `/*
+AxeraWikiClipper — built ${new Date().toISOString()}
+*/`;
+
+const ctx = await esbuild.context({
+  banner: { js: banner },
+  entryPoints: ["main.ts"],
+  bundle: true,
+  external: [
+    "obsidian",
+    "electron",
+    "@codemirror/autocomplete",
+    "@codemirror/collab",
+    "@codemirror/commands",
+    "@codemirror/language",
+    "@codemirror/lint",
+    "@codemirror/search",
+    "@codemirror/state",
+    "@codemirror/view",
+    "@lezer/common",
+    "@lezer/highlight",
+    "@lezer/lr",
+    ...builtins,
+  ],
+  format: "cjs",
+  target: "es2020",
+  logLevel: "info",
+  sourcemap: prod ? false : "inline",
+  treeShaking: true,
+  outfile: "main.js",
+  define: {
+    "process.env.NODE_ENV": JSON.stringify(prod ? "production" : "development"),
+  },
+});
+
+if (prod) {
+  await ctx.rebuild();
+  await ctx.dispose();
+} else {
+  await ctx.watch();
+}

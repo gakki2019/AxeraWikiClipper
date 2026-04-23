@@ -1,0 +1,22 @@
+
+你是obsidian插件的资深开发工程师
+项目需求：
+1. 限定wiki网站，https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973
+2. 实现一个Obsidian插件，该插件用于把指定wiki网站的文章下载到obsidian的指定目录
+3. 用户只需要输入需要下载的网址，即可自动下载
+4. 将文章转成标准markdown格式，命名格式为网址的标题，比如：https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973的标题是：AX8860 AXCL runtime 支持pytorch VMM，那么markdown的命名即AX8860 AXCL runtime 支持pytorch VMM.md
+5. 下载该wiki网址的所有附件和图片，比如https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973的附件有：
+    5.1 虚拟内存到物理内存映射.pdf
+    5.2 图片：https://wiki.aixin-chip.com/download/attachments/242053973/image2026-4-22_20-21-0.png?version=1&modificationDate=1776860456874&api=v2
+   将这些图片和附件归档到以标题命名的子文件夹内，文档目录组织：
+   inbox     # 本插件指定的下载归档根目录
+   |
+   |--- AX8860 AXCL runtime 支持pytorch VMM.md
+   |--- AX8860 AXCL runtime 支持pytorch VMM
+        |--- 虚拟内存到物理内存映射.pdf
+        |--- image2026-4-22_20-21-0.png
+
+    5.3 需要注意markdown内对图片的引用要修改，保证图片渲染正常
+6. wiki网址是需要用户登录的，在开发和调试过程中可以让我来登录
+7. 因为插件的功能单一，就是抓取wiki网址的内容存储到本地的markdown，因此插件的选项不需要太多
+8. chrome-devtools-mcp 已配置，方便你来获取信息

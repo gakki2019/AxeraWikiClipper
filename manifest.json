@@ -1,0 +1,9 @@
+{
+    "id": "ax-wiki-clipper",
+    "name": "AxeraWikiClipper",
+    "version": "0.1.0",
+    "minAppVersion": "1.4.0",
+    "description": "Clipper Axera wiki page to vault.",
+    "author": "yayajxp",
+    "isDesktopOnly": true
+}
