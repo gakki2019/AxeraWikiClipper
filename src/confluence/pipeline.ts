@@ -1,4 +1,4 @@
-import { App, normalizePath, Notice, Vault } from "obsidian";
+import { App, normalizePath, Notice, TFile, TFolder, Vault } from "obsidian";
 import {
   ConfluenceClient,
   AuthError,
@@ -10,7 +10,7 @@ import {
 import { xhtmlToMarkdown } from "./converter";
 import type { AxWikiClipperSettings } from "../settings";
 import { HARDCODED } from "../settings";
-import { parsePageId, isTinyUiLink } from "../utils/url";
+import { parseWikiUrl, isTinyUiLink } from "../utils/url";
 import { sanitizeFilename, joinVaultPath } from "../utils/filename";
 import { logger } from "../utils/logger";
 
@@ -28,13 +28,20 @@ export class Pipeline {
   }
 
   async downloadByInput(input: string): Promise<DownloadResult> {
-    const pageId = parsePageId(input);
-    if (!pageId) {
+    const parsed = parseWikiUrl(input);
+    if (!parsed) {
       if (isTinyUiLink(input)) {
         throw new Error("Short links (/x/...) are not supported. Please paste the full page URL.");
       }
-      throw new Error("Invalid input: expect a wiki URL or numeric pageId.");
+      throw new Error(
+        "Invalid input: paste a full wiki page URL (e.g. /display/<Space>/<Title> or ?pageId=...)."
+      );
     }
+    if (parsed.kind === "id") {
+      return this.downloadByPageId(parsed.pageId);
+    }
+    new Notice(`Resolving "${parsed.title}" in space ${parsed.spaceKey}…`);
+    const pageId = await this.client.resolvePageIdByTitle(parsed.spaceKey, parsed.title);
     return this.downloadByPageId(pageId);
   }
 
@@ -47,16 +54,30 @@ export class Pipeline {
     const attachments = await this.client.listAttachments(pageId);
     logger.info("Attachments listed:", attachments.length);
 
-    const titleFolder = sanitizeFilename(page.title);
     const inbox = (this.settings.inboxPath || "inbox").replace(/^\/+|\/+$/g, "");
-    const folderPath = normalizePath(joinVaultPath(inbox, titleFolder));
-    const mdBase =
-      this.settings.filenameSource === "pageId"
-        ? pageId
-        : titleFolder;
-    const mdPath = normalizePath(joinVaultPath(inbox, `${mdBase}.md`));
-
     await this.ensureFolder(inbox);
+
+    // Dedup by pageId: find any existing .md in inbox whose frontmatter
+    // carries this pageId. If found and its path differs from the new desired
+    // path, we will best-effort delete the stale md + attachment folder after
+    // the new files are in place.
+    const existingByPageId = await findExistingByPageId(this.app.vault, inbox, pageId);
+    const titleBase = sanitizeFilename(page.title);
+    let mdBase = titleBase;
+    let folderBase = titleBase;
+    const desiredMdPath = normalizePath(joinVaultPath(inbox, `${titleBase}.md`));
+    if (!existingByPageId) {
+      // No previous version of this page. If desired filename is already taken
+      // by an UNRELATED page, disambiguate with the pageId suffix.
+      const clash = this.app.vault.getAbstractFileByPath(desiredMdPath);
+      if (clash) {
+        mdBase = `${titleBase} (${pageId})`;
+        folderBase = `${titleBase} (${pageId})`;
+      }
+    }
+    const folderPath = normalizePath(joinVaultPath(inbox, folderBase));
+    const mdPath = normalizePath(joinVaultPath(inbox, `${mdBase}.md`));
+    const titleFolder = folderBase;
 
     // Determine which attachments to download.
     const referenced = extractReferencedFilenames(page.storageXhtml);
@@ -99,10 +120,17 @@ export class Pipeline {
       attachmentHrefBase: titleFolder,
     });
 
-    const frontmatter = this.settings.writeFrontmatter ? buildFrontmatter(page) : "";
+    const frontmatter = buildFrontmatter(page);
     const fullMd = frontmatter + markdownBody;
 
     await this.writeMarkdown(mdPath, fullMd);
+
+    // Rename cleanup: if we previously saved this pageId at a different path,
+    // best-effort delete the stale .md and its attachment folder. Failures are
+    // logged but never block.
+    if (existingByPageId && existingByPageId !== mdPath) {
+      await this.tryCleanupStale(existingByPageId, inbox);
+    }
 
     const msg = failed.length
       ? `Done with ${failed.length} attachment failures. See console for details.`
@@ -111,6 +139,39 @@ export class Pipeline {
     logger.info("Result", { mdPath, downloaded, failed });
 
     return { markdownPath: mdPath, attachmentCount: downloaded, failedAttachments: failed };
+  }
+
+  /**
+   * Best-effort removal of a previous .md for the same pageId and its sibling
+   * attachment folder (named after the md's basename). Any failure is logged
+   * and swallowed so that the new file write is never blocked.
+   */
+  private async tryCleanupStale(stalePath: string, inbox: string): Promise<void> {
+    const v = this.app.vault;
+    const staleFile = v.getAbstractFileByPath(stalePath);
+    if (staleFile) {
+      try {
+        await v.delete(staleFile);
+        logger.info("Deleted stale md", stalePath);
+      } catch (e) {
+        logger.warn("Could not delete stale md (kept as orphan):", stalePath, (e as Error).message);
+        new Notice(`Kept old note as orphan: ${stalePath}`);
+      }
+    }
+    const base = stalePath.replace(/\.md$/i, "");
+    const folder = v.getAbstractFileByPath(base);
+    if (folder) {
+      try {
+        await v.delete(folder, true);
+        logger.info("Deleted stale attachments folder", base);
+      } catch (e) {
+        logger.warn(
+          "Could not delete stale attachments folder (kept as orphan):",
+          base,
+          (e as Error).message
+        );
+      }
+    }
   }
 
   private async downloadOne(a: Attachment, folderPath: string): Promise<void> {
@@ -155,17 +216,41 @@ export class Pipeline {
     const v: Vault = this.app.vault;
     const existing = v.getAbstractFileByPath(path);
     if (existing) {
-      if (!this.settings.overwriteExisting) {
-        throw new Error(
-          `File exists: ${path}. Enable "Overwrite existing files" in settings to replace it.`
-        );
-      }
       // @ts-expect-error modify exists on TFile
       await v.modify(existing, content);
       return;
     }
     await v.create(path, content);
   }
+}
+
+/**
+ * Scan `<inbox>/*.md` for a note whose YAML frontmatter declares the given
+ * pageId. Used for dedup after a page has been renamed on the wiki side.
+ * Returns the vault-relative path or null. Errors are swallowed: dedup is a
+ * best-effort optimization and must not block a new download.
+ */
+async function findExistingByPageId(
+  vault: Vault,
+  inbox: string,
+  pageId: string
+): Promise<string | null> {
+  const folder = vault.getAbstractFileByPath(inbox);
+  if (!folder || !(folder instanceof TFolder)) return null;
+  const needle = new RegExp(`^pageId:\\s*"?${pageId}"?\\s*$`, "m");
+  for (const child of folder.children) {
+    if (!(child instanceof TFile)) continue;
+    if (child.extension.toLowerCase() !== "md") continue;
+    try {
+      const text = await vault.read(child);
+      // Only inspect the leading frontmatter block.
+      const head = text.startsWith("---") ? text.slice(0, 2000) : text.slice(0, 1024);
+      if (needle.test(head)) return child.path;
+    } catch (e) {
+      logger.debug("Skip md during dedup scan:", child.path, (e as Error).message);
+    }
+  }
+  return null;
 }
 
 function buildFrontmatter(page: PageInfo): string {

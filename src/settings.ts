@@ -3,7 +3,6 @@ import type AxWikiClipperPlugin from "../main";
 import { logger } from "./utils/logger";
 
 export type AuthMode = "basic" | "cookie";
-export type FilenameSource = "title" | "pageId";
 export type LinkStyle = "wikilink" | "markdown";
 
 export interface AxWikiClipperSettings {
@@ -15,11 +14,8 @@ export interface AxWikiClipperSettings {
   cookie: string;
   // Storage
   inboxPath: string;
-  filenameSource: FilenameSource;
-  overwriteExisting: boolean;
   downloadAllAttachments: boolean;
   // Markdown
-  writeFrontmatter: boolean;
   linkStyle: LinkStyle;
 }
 
@@ -30,10 +26,7 @@ export const DEFAULT_SETTINGS: AxWikiClipperSettings = {
   password: "",
   cookie: "",
   inboxPath: "inbox",
-  filenameSource: "title",
-  overwriteExisting: true,
   downloadAllAttachments: false,
-  writeFrontmatter: true,
   linkStyle: "wikilink",
 };
 
@@ -134,30 +127,6 @@ export class AxWikiClipperSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Filename source")
-      .setDesc("How to name the generated Markdown file.")
-      .addDropdown((d) =>
-        d
-          .addOption("title", "Page title")
-          .addOption("pageId", "Page ID")
-          .setValue(this.plugin.settings.filenameSource)
-          .onChange(async (v) => {
-            this.plugin.settings.filenameSource = v as FilenameSource;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Overwrite existing files")
-      .setDesc("If off, the command skips pages whose Markdown file already exists.")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.overwriteExisting).onChange(async (v) => {
-          this.plugin.settings.overwriteExisting = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
       .setName("Download all attachments")
       .setDesc("If off, only attachments referenced in the page body are downloaded.")
       .addToggle((t) =>
@@ -169,16 +138,6 @@ export class AxWikiClipperSettingTab extends PluginSettingTab {
 
     // --- Markdown ---
     containerEl.createEl("h2", { text: "Markdown" });
-
-    new Setting(containerEl)
-      .setName("Write frontmatter")
-      .setDesc("Prepend YAML frontmatter (source, pageId, spaceKey, version, originalTitle, fetchedAt).")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.writeFrontmatter).onChange(async (v) => {
-          this.plugin.settings.writeFrontmatter = v;
-          await this.plugin.saveSettings();
-        })
-      );
 
     new Setting(containerEl)
       .setName("Attachment link style")

@@ -1,23 +1,31 @@
 /**
- * Parse a user-provided input (URL or bare numeric pageId) into a Confluence pageId.
+ * Parse a user-provided wiki URL.
  *
- * Accepted:
+ * Accepted URL shapes (full URL only — bare numeric pageId is NOT supported as
+ * of v0.2.0):
  *   - `https://<host>/pages/viewpage.action?pageId=242053973[&...]`
  *   - `https://<host>/spaces/<space>/pages/242053973/<slug>`
- *   - bare numeric id: `"242053973"` (6–12 digits, trimmed)
+ *   - `https://<host>/display/<spaceKey>/<Title>`   (spaces encoded as `+` or `%20`)
+ *   - `https://<host>/display/~<user>/<Title>`      (personal space)
  *
- * Returns `null` when the input cannot be parsed (caller should show an error).
- * tinyui short URLs (`/x/...`) are not supported in this release.
+ * The first two resolve to a pageId directly. `/display/` URLs only carry
+ * spaceKey + display title; callers resolve them into a pageId via a REST
+ * query (`GET /rest/api/content?spaceKey=X&title=Y`).
+ *
+ * tinyui short URLs (`/x/...`) remain unsupported; use `isTinyUiLink` to
+ * produce a specific error message.
+ *
+ * Returns `null` when the input is not a recognized wiki URL.
  */
-export function parsePageId(input: string): string | null {
+export type ParsedWikiUrl =
+  | { kind: "id"; pageId: string }
+  | { kind: "display"; spaceKey: string; title: string };
+
+export function parseWikiUrl(input: string): ParsedWikiUrl | null {
   if (!input) return null;
   const raw = input.trim();
   if (raw.length === 0) return null;
 
-  // Bare numeric id
-  if (/^\d{6,12}$/.test(raw)) return raw;
-
-  // Try URL parsing
   let url: URL;
   try {
     url = new URL(raw);
@@ -25,28 +33,48 @@ export function parsePageId(input: string): string | null {
     return null;
   }
 
-  // viewpage.action?pageId=
   const pageIdParam = url.searchParams.get("pageId");
   if (pageIdParam && /^\d{3,}$/.test(pageIdParam)) {
-    return pageIdParam;
+    return { kind: "id", pageId: pageIdParam };
   }
 
-  // /pages/<digits>/...  or  /spaces/.../pages/<digits>/...
   const m = url.pathname.match(/\/pages\/(\d{3,})(?:\/|$)/);
-  if (m) return m[1];
+  if (m) return { kind: "id", pageId: m[1] };
+
+  const disp = url.pathname.match(/^\/display\/([^/]+)\/(.+)$/);
+  if (disp) {
+    const spaceKey = decodeDisplaySegment(disp[1]);
+    let rawTitle = disp[2];
+    if (rawTitle.endsWith("/")) rawTitle = rawTitle.slice(0, -1);
+    const title = decodeDisplaySegment(rawTitle);
+    if (spaceKey && title) {
+      return { kind: "display", spaceKey, title };
+    }
+  }
 
   return null;
 }
 
-/**
- * Is the given input a tinyui short link (`/x/...`)? Used to produce a more
- * specific error message when parsing fails.
- */
+/** Is the given input a tinyui short link (`/x/...`)? */
 export function isTinyUiLink(input: string): boolean {
   try {
     const u = new URL(input.trim());
     return /\/x\/[A-Za-z0-9_-]+/.test(u.pathname);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Decode a `/display/` URL path segment. Confluence historically encodes
+ * spaces as `+`, so convert `+` → space before `decodeURIComponent` (which
+ * handles `%20` and friends).
+ */
+function decodeDisplaySegment(seg: string): string {
+  const withSpaces = seg.replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(withSpaces);
+  } catch {
+    return withSpaces;
   }
 }

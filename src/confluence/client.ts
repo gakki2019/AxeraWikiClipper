@@ -98,6 +98,25 @@ export class ConfluenceClient {
     return res;
   }
 
+  /**
+   * Resolve a (spaceKey, title) pair to a pageId via the content search API.
+   * Throws `NotFoundError` when no match is found.
+   */
+  async resolvePageIdByTitle(spaceKey: string, title: string): Promise<string> {
+    const url =
+      `${this.baseUrl}/rest/api/content?spaceKey=${encodeURIComponent(spaceKey)}` +
+      `&title=${encodeURIComponent(title)}&limit=1`;
+    const res = await this.request({ url, method: "GET", headers: this.buildHeaders() });
+    const json = res.json as { results?: Array<{ id?: string }> };
+    const hit = json?.results?.[0];
+    if (!hit || !hit.id) {
+      throw new NotFoundError(
+        `No page found for spaceKey="${spaceKey}", title="${title}".`
+      );
+    }
+    return hit.id;
+  }
+
   async getPage(pageId: string): Promise<PageInfo> {
     const url = `${this.baseUrl}/rest/api/content/${encodeURIComponent(
       pageId

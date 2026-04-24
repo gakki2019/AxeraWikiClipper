@@ -19,6 +19,19 @@ export class Setting {
 export class Modal {
   constructor(..._args: unknown[]) {}
 }
+export class TFile {
+  path: string = "";
+  name: string = "";
+  basename: string = "";
+  extension: string = "";
+  parent: TFolder | null = null;
+}
+export class TFolder {
+  path: string = "";
+  name: string = "";
+  parent: TFolder | null = null;
+  children: Array<TFile | TFolder> = [];
+}
 export interface App {}
 export interface Vault {}
 export interface RequestUrlParam {}

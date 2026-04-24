@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeFilename, joinVaultPath } from "../src/utils/filename";
-import { parsePageId, isTinyUiLink } from "../src/utils/url";
+import { parseWikiUrl, isTinyUiLink } from "../src/utils/url";
 
 describe("sanitizeFilename", () => {
   it("keeps CJK and spaces", () => {
@@ -29,28 +29,50 @@ describe("joinVaultPath", () => {
   });
 });
 
-describe("parsePageId", () => {
-  it("extracts from viewpage.action", () => {
+describe("parseWikiUrl", () => {
+  it("extracts id from viewpage.action", () => {
     expect(
-      parsePageId("https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973")
-    ).toBe("242053973");
+      parseWikiUrl("https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973")
+    ).toEqual({ kind: "id", pageId: "242053973" });
   });
-  it("extracts from /pages/<id>/ path", () => {
+  it("extracts id from /pages/<id>/ path", () => {
     expect(
-      parsePageId("https://wiki.aixin-chip.com/spaces/~foo/pages/242053973/Some+Title")
-    ).toBe("242053973");
+      parseWikiUrl("https://wiki.aixin-chip.com/spaces/~foo/pages/242053973/Some+Title")
+    ).toEqual({ kind: "id", pageId: "242053973" });
   });
-  it("accepts bare numeric id", () => {
-    expect(parsePageId("242053973")).toBe("242053973");
-    expect(parsePageId("  242053973  ")).toBe("242053973");
+  it("parses /display/<space>/<title> with '+' as space", () => {
+    expect(parseWikiUrl("https://wiki.aixin-chip.com/display/SW/07.+FAQ")).toEqual({
+      kind: "display",
+      spaceKey: "SW",
+      title: "07. FAQ",
+    });
   });
-  it("rejects junk", () => {
-    expect(parsePageId("")).toBeNull();
-    expect(parsePageId("abc")).toBeNull();
-    expect(parsePageId("https://example.com/foo")).toBeNull();
+  it("parses /display/<space>/<title> with percent-encoded space", () => {
+    expect(parseWikiUrl("https://wiki.aixin-chip.com/display/SW/07.%20FAQ")).toEqual({
+      kind: "display",
+      spaceKey: "SW",
+      title: "07. FAQ",
+    });
+  });
+  it("parses personal-space /display/~user/<title>", () => {
+    expect(
+      parseWikiUrl("https://wiki.aixin-chip.com/display/~jingxiaoping/My+Page")
+    ).toEqual({ kind: "display", spaceKey: "~jingxiaoping", title: "My Page" });
+  });
+  it("rejects bare numeric id (v0.2.0: full URL required)", () => {
+    expect(parseWikiUrl("242053973")).toBeNull();
+    expect(parseWikiUrl("  242053973  ")).toBeNull();
+  });
+  it("rejects junk and unrelated URLs", () => {
+    expect(parseWikiUrl("")).toBeNull();
+    expect(parseWikiUrl("abc")).toBeNull();
+    expect(parseWikiUrl("https://example.com/foo")).toBeNull();
   });
   it("detects tinyui links", () => {
     expect(isTinyUiLink("https://wiki.aixin-chip.com/x/VXNtDg")).toBe(true);
-    expect(isTinyUiLink("https://wiki.aixin-chip.com/pages/viewpage.action?pageId=1")).toBe(false);
+    expect(
+      isTinyUiLink("https://wiki.aixin-chip.com/pages/viewpage.action?pageId=1")
+    ).toBe(false);
   });
 });
+

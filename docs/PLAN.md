@@ -25,24 +25,29 @@ Single-command Obsidian plugin that downloads a Confluence page + all attachment
 - Always send `X-Atlassian-Token: no-check`.
 
 ## Data flow
-1. User runs command → modal prompts URL or pageId.
-2. Parse pageId (support `viewpage.action?pageId=`, `/spaces/.../pages/<id>/...`, bare id).
-3. `GET /rest/api/content/{id}?expand=body.storage,title,version,space`.
-4. `GET /rest/api/content/{id}/child/attachment?limit=200` (handle pagination).
-5. Create `<inbox>/<sanitizedTitle>/`.
-6. Parallel-download (concurrency 8) every attachment.
-7. Convert body.storage via turndown + GFM + Confluence macro rules; rewrite `ri:attachment` refs.
-8. Prepend YAML frontmatter (if enabled).
-9. Overwrite `<inbox>/<sanitizedTitle>.md`.
+1. User runs command → modal prompts a full wiki page URL.
+2. Parse URL via `parseWikiUrl` (supports `viewpage.action?pageId=`, `/spaces/.../pages/<id>/...`, `/display/<space>/<title>`; bare numeric pageId is NOT accepted as of v0.2.0).
+3. For `/display/` URLs, resolve to pageId via `GET /rest/api/content?spaceKey=X&title=Y&limit=1`.
+4. `GET /rest/api/content/{id}?expand=body.storage,title,version,space,history,history.lastUpdated`.
+5. `GET /rest/api/content/{id}/child/attachment?limit=200` (handle pagination).
+6. Dedup by pageId: scan `<inbox>/*.md` frontmatter. On hit at different path, best-effort delete old `.md` + old attachments folder after new write (failures are logged, never block).
+7. If target filename is already taken by an unrelated pageId, disambiguate with ` (<pageId>)` suffix.
+8. Create `<inbox>/<sanitizedTitle>/`.
+9. Parallel-download (concurrency 8) every attachment.
+10. Convert body.storage via turndown + GFM + Confluence macro rules; rewrite `ri:attachment` refs.
+11. Prepend YAML frontmatter (always).
+12. Write `<inbox>/<sanitizedTitle>.md` (overwrite on existing).
 
 ## Converter rules
 See `/memories/repo/plan.md` § Converter rules.
 
-## Settings (11 items, final)
+## Settings (8 items, final)
 Connection: baseUrl, authMode, username, password, cookie
-Storage: inboxPath, filenameSource, overwriteExisting, downloadAllAttachments (**default: off**)
-Markdown: writeFrontmatter, linkStyle (**default: `wikilink`**; alternative `markdown`)
-Hardcoded: concurrency=8, timeout=30s, frontmatter field set.
+Storage: inboxPath, downloadAllAttachments (**default: off**)
+Markdown: linkStyle (**default: `wikilink`**; alternative `markdown`)
+Hardcoded: concurrency=8, timeout=30s, frontmatter is always written (always-on), overwrite is always-on.
+
+> Removed in v0.2.0: `filenameSource` (we always use sanitized title; collisions are disambiguated by pageId suffix), `overwriteExisting` (always overwrite; dedup by pageId handles renames), `writeFrontmatter` (always written; frontmatter `pageId` is required for dedup to work).
 
 ## Logging
 - `[AxeraWikiClipper]` prefix, console-only, 4 levels.
@@ -75,10 +80,17 @@ The attachment list REST endpoint returns historic attachments even when the cur
 Some Confluence Server deployments return `HTTP 3xx → ERR_TOO_MANY_REDIRECTS` for `/download/attachments/<id>/<file>?version=1&modificationDate=...&api=v2`. On that specific error, the client retries once with the query string stripped (plain path). This behavior is unit-tested in `tests/client.test.ts`.
 
 ### Modal layout
-The Download modal uses a stacked layout: "URL or page ID" label + single-line description (`white-space: nowrap`) on top, then a full-width `<input>`. Title reads `Download Axera wiki page`. Enter submits; Esc closes.
+The Download modal uses a stacked layout: "Wiki page URL" label + single-line description (`white-space: nowrap`) on top, then a full-width `<input>`. Title reads `Download Axera wiki page`. Enter submits; Esc closes.
 
 ### Enriched frontmatter
 `?expand=history,history.lastUpdated` yields page history; frontmatter now includes `createdBy`, `createdAt`, `lastModifiedBy`, `lastModifiedAt` in addition to the original set. `fetchedAt` uses `Date.toISOString()` (trailing `Z` = UTC).
+
+### v0.2.0 — URL coverage + pageId dedup
+- `parseWikiUrl` replaces `parsePageId`. Returns either `{kind:"id", pageId}` or `{kind:"display", spaceKey, title}`. Bare numeric pageId is rejected (a full URL is required).
+- `/display/<Space>/<Title>` URLs are resolved to a pageId via `GET /rest/api/content?spaceKey=X&title=Y&limit=1`. Spaces in the title path may be encoded as `+` or `%20`; both are normalized. Personal-space URLs `/display/~user/...` are supported.
+- pageId is the dedup key. Before writing a new note, we scan `<inbox>/*.md` for frontmatter `pageId: "..."` matching the page being downloaded. On a hit at a different path (e.g. the page was renamed on the wiki side), the new file is written at the new location and the old `.md` + its attachment folder are deleted best-effort. Delete failures (permissions, open file, etc.) are logged and swallowed — the new write always succeeds; the stale file is left as an orphan.
+- Collision on target filename by an UNRELATED pageId produces a ` (<pageId>)` suffix (e.g. `07. FAQ (242053973).md` + `07. FAQ (242053973)/`).
+- Frontmatter is always written; `pageId` field is mandatory for dedup scanning.
 
 ## Scope
 - IN: single-URL download, attachments (referenced by default, all opt-in), Markdown conversion, overwrite, 2-mode auth, settings UI.

@@ -14,9 +14,9 @@ export class UrlModal extends Modal {
 
     // Stacked layout: label + single-line description, then a full-width input.
     const field = contentEl.createDiv({ cls: "axwc-field" });
-    field.createEl("div", { text: "URL or page ID", cls: "setting-item-name" });
+    field.createEl("div", { text: "Wiki page URL", cls: "setting-item-name" });
     const desc = field.createEl("div", {
-      text: "Paste a wiki page URL, or just the numeric pageId (e.g. 242053973).",
+      text: "Paste the full page URL, e.g. /display/<Space>/<Title> or /pages/viewpage.action?pageId=...",
       cls: "setting-item-description",
     });
     desc.style.whiteSpace = "nowrap";
@@ -24,7 +24,7 @@ export class UrlModal extends Modal {
     desc.style.textOverflow = "ellipsis";
 
     const input = field.createEl("input", { type: "text", cls: "axwc-url-input" });
-    input.placeholder = "https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973";
+    input.placeholder = "https://wiki.aixin-chip.com/display/SW/07.+FAQ";
     input.style.width = "100%";
     input.style.marginTop = "8px";
     input.addEventListener("input", () => (this.value = input.value));

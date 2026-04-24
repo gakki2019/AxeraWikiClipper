@@ -79,3 +79,39 @@ describe("ConfluenceClient.downloadAttachment", () => {
     expect(requestMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ConfluenceClient.resolvePageIdByTitle", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it("returns the first result's id on a hit", async () => {
+    requestMock.mockImplementationOnce(async () => ({
+      status: 200,
+      headers: {},
+      text: "",
+      json: { results: [{ id: "242053973", title: "07. FAQ" }] },
+      arrayBuffer: new ArrayBuffer(0),
+    }));
+    const client = makeClient();
+    const id = await client.resolvePageIdByTitle("SW", "07. FAQ");
+    expect(id).toBe("242053973");
+    const calledUrl = (requestMock.mock.calls[0][0] as { url: string }).url;
+    expect(calledUrl).toContain("/rest/api/content?spaceKey=SW");
+    expect(calledUrl).toContain("title=07.%20FAQ");
+  });
+
+  it("throws NotFoundError when results are empty", async () => {
+    requestMock.mockImplementationOnce(async () => ({
+      status: 200,
+      headers: {},
+      text: "",
+      json: { results: [] },
+      arrayBuffer: new ArrayBuffer(0),
+    }));
+    const client = makeClient();
+    await expect(client.resolvePageIdByTitle("SW", "Nope")).rejects.toThrow(
+      /No page found/
+    );
+  });
+});
