@@ -268,8 +268,25 @@ function buildFrontmatter(page: PageInfo): string {
   if (page.createdAt) lines.push(`createdAt: "${esc(page.createdAt)}"`);
   if (page.lastModifiedBy) lines.push(`lastModifiedBy: "${esc(page.lastModifiedBy)}"`);
   if (page.lastModifiedAt) lines.push(`lastModifiedAt: "${esc(page.lastModifiedAt)}"`);
-  lines.push(`fetchedAt: "${now.toISOString()}"`, "---", "");
+  lines.push(`fetchedAt: "${formatBeijingTime(now)}"`, "---", "");
   return lines.join("\n");
+}
+
+/**
+ * Format a Date as Beijing time (UTC+8) using the ISO-8601 extended form
+ * `YYYY-MM-DDTHH:mm:ss+08:00`. Kept explicit (rather than toLocaleString)
+ * so the format is stable regardless of host locale / Node version.
+ */
+function formatBeijingTime(d: Date): string {
+  const beijing = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const y = beijing.getUTCFullYear();
+  const mo = pad(beijing.getUTCMonth() + 1);
+  const da = pad(beijing.getUTCDate());
+  const h = pad(beijing.getUTCHours());
+  const mi = pad(beijing.getUTCMinutes());
+  const s = pad(beijing.getUTCSeconds());
+  return `${y}-${mo}-${da}T${h}:${mi}:${s}+08:00`;
 }
 
 function extractReferencedFilenames(xhtml: string): Set<string> {

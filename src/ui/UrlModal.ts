@@ -16,7 +16,7 @@ export class UrlModal extends Modal {
     const field = contentEl.createDiv({ cls: "axwc-field" });
     field.createEl("div", { text: "Wiki page URL", cls: "setting-item-name" });
     const desc = field.createEl("div", {
-      text: "Paste the full page URL, e.g. /display/<Space>/<Title> or /pages/viewpage.action?pageId=...",
+      text: "Paste the full page URL, e.g: https://wiki.aixin-chip.com/pages/viewpage.action?pageId=242053973",
       cls: "setting-item-description",
     });
     desc.style.whiteSpace = "nowrap";
